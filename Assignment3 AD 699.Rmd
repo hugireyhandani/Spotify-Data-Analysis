@@ -1,0 +1,474 @@
+---
+title: "Assignment3 AD 699"
+author: "Hugi Reyhandani Munggaran"
+date: "2023-03-30"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(visualize)
+library(readr)
+library(FNN)
+library(tidyverse)
+library(e1071)
+```
+***- K-Nearest Neighbors***\
+\
+**Question 1**\
+a. Bohemian Rhapsody
+
+b. I chose Bohemian Rhapsody by Queen because I believe it is a timeless masterpiece that has captured the hearts of people from all walks of life. Whenever I listen to this song, I'm filled with emotions and awe, and I can't help but wonder what it would be like if Freddie were still with us. Additionally, my girlfriend and I share a mutual love and appreciation for this classic tune, which makes it even more special to us. Its such an Intelligent song!
+
+c. Danceability: 39.2%
+Energy: 40.2%
+Loudness: -9.961 dB
+Speechiness: 5.36%
+Acousticness: 28.8%
+Instrumentalness: 0.0%
+Liveness: 24.3%
+Tempo: 143.883 bpm
+Duration: 5 minutes and 54 seconds
+Valence: 22.8%
+```{r}
+spot100 <- read_csv('spot100.csv')
+```
+
+**Question 2**\
+a. 
+```{r}
+# Select Bohemian Rhapsody and stored it as a Dataframe name Bohemian
+Bohemian<- spot100[spot100$name == "Bohemian Rhapsody", ]
+Bohemian <- Bohemian %>%
+  rename(duration_ms = duration)
+```
+
+**Question 3**\
+a. Based on the structure function output, it appears that variable 'target' is a numerical binary variable that represents whether George, the person who uploaded this dataset, liked the song or not.
+```{r}
+# Import Spotify Dataset
+spotify <- read_csv("spotify.csv")
+str(spotify)
+
+# Convert target variable to factor
+spotify$target <- factor(spotify$target)
+```
+
+b. Below shows that the unique values for the target variable are 0 and 1. There are 997 records with the value of 0, which means George disliked the song, and 1020 records with the value of 1, which means George liked the song.
+```{r}
+# Creating table to find Unique values in 'target'
+table(spotify$target)
+```
+
+**Question 4**\
+a.  The output of the code below is 0 which indicates that there are no NA values in the spotify dataset.
+```{r}
+# finding NA
+sum(is.na(spotify))
+
+```
+
+**Question 5**\
+```{r}
+# remove variable ...1 or X, key, mode and time_signature
+spotify <- select(spotify, -c(...1, key, mode, time_signature))
+```
+
+
+**Question 6**\
+Using the caret library, I partitioned the Spotify dataset into training and validation sets with a ratio of 60:40 respectively, using a random seed of 121. 
+```{r} 
+# Set same seed from assignment 2
+set.seed(121)
+# Create training (60%) and validation (40%) sets
+trainIndex <- createDataPartition(spotify$target, p = 0.6, list = FALSE)
+train <- spotify[trainIndex, ]
+valid <- spotify[-trainIndex, ]
+```
+
+**Question 7**\
+```{r}
+# Split data into two subsets based on target variable
+liked_songs <- subset(train, target == 1)
+disliked_songs <- subset(train, target == 0)
+
+# Perform t-tests for all numeric variables
+numeric_cols <- c("acousticness", "danceability", "duration_ms", "energy", "instrumentalness",
+                  "liveness", "loudness", "speechiness", "tempo", "valence")
+
+ttest_results <- data.frame(variable = character(), 
+                            t_statistic = numeric(),
+                            p_value = numeric(),
+                            stringsAsFactors = FALSE)
+
+for (col in numeric_cols) {
+  ttest <- t.test(liked_songs[,col], disliked_songs[,col])
+  ttest_results <- rbind(ttest_results, 
+                         data.frame(variable = col,
+                                    t_statistic = round(ttest$statistic,5),
+                                    p_value = round(ttest$p.value,5)))
+}
+
+ttest_results
+
+
+```
+b. Based on the t-test results, the p-values for the variables 'energy', 'liveness', 'loudness', and 'tempo' are greater than 0.05. This indicates that there is not a significant difference between the means of these variables for songs that George liked and songs that he did not like. Therefore, we cannot reject the null hypothesis that there is no difference in means between these two groups for these variables.
+
+This code will remove the 'energy', 'liveness', 'loudness', and 'tempo' variables from both the 'train' and 'valid' datasets.
+```{r}
+train <- train[, -c(4, 6, 7, 9)]
+valid <- valid[, -c(4, 6, 7, 9)]
+```
+    
+c. It may make sense to remove variables from a k-nn model when those variables values are very similar for both outcome classes because these variables do not contribute significantly to the differentiation between the classes. This can lead to noisy and unreliable predictions, as the model is not effectively capturing the underlying patterns and differences in the data. By removing these variables, the model can focus on the most informative variables and potentially improve its predictive accuracy
+
+**Question 8**\
+```{r}
+# Normalize numeric columns in train and valid dataframes
+num_cols <- c("acousticness", "danceability", "duration_ms", "instrumentalness",
+              "speechiness", "valence")
+
+train_norm <- preProcess(train[, num_cols], method = c("center", "scale"))
+train_norm_df <- predict(train_norm, train[, num_cols])
+
+valid_norm <- preProcess(valid[, num_cols], method = c("center", "scale"))
+valid_norm_df <- predict(valid_norm, valid[, num_cols])
+
+```
+
+**Question 9**\
+
+```{r}
+# Preprocess and normalize numeric variables in "bohemian" dataframe
+Bohemian_norm <- predict(train_norm, Bohemian[, num_cols])
+
+# Use knn() to predict whether George will like the song
+k <- 7
+predicted_target <- knn(train_norm_df, Bohemian_norm, train$target, k)
+predicted_target
+
+```
+The output of predicted_target is 1, indicating that the model predicted that George will like the song "Bohemian Rhapsody".
+
+```{r}
+# Get the indices of the 7 nearest neighbors
+nearest_indices <- attr(predicted_target, "nn.index")[1, ]
+
+# Create a data frame with the song titles, artists, and outcome classes of the 7 nearest neighbors
+nearest <- train[nearest_indices ,c("song_title", "artist", "target")]
+nearest
+
+```
+The 7 nearest neighbors to the "Bohemian Rhapsody" song are:
+
+- "Wait for the Man" by FIDLAR with a target outcome of 1 (George would like it)
+- "Zac Brown Band - Hot Country" by Various Artists with a target outcome of 0 (George would not like it)
+- "Holdin On" by Flume with a target outcome of 1 (George would like it)
+- "It #1" by Ty Segall with a target outcome of 1 (George would like it)
+- "Strychnine" by The Sonics with a target outcome of 1 (George would like it)
+- "Time-Out" by Terror Train with a target outcome of 1 (George would like it)
+- "Waiting" by Dash Berlin with a target outcome of 0 (George would not like it)
+
+**Question 10**\
+The highest accuracy is achieved at k=13 with an accuracy of 0.7071960.
+```{r}
+# Initialize a data frame with two columns: k, and accuracy
+accuracy.df <- data.frame(k = seq(1, 20, 1), accuracy = rep(0, 20))
+
+# Compute knn for different k on validation data
+for (i in 1:20) {
+  knn.pred <- knn(train_norm_df[, 1:6], valid_norm_df[, 1:6], cl = train$target,
+                  k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, valid$target)$overall[1]
+}
+print(accuracy.df)
+
+```
+
+**Question 11**\ 
+```{r}
+# Create a ggplot object
+ggplot(accuracy.df, aes(x = k, y = accuracy)) + geom_point() + geom_line() + xlab("k") + ylab("Accuracy") +
+  ggtitle("Accuracy vs. k")
+
+```
+
+**Question 12**\  
+Using this optimal k-value, the algorithm was used to predict whether George would like the song "Bohemian Rhapsody". The result was the same as before, with a predicted outcome of 1, meaning that George would like the song. This is not surprising given that the accuracy difference between the k-values of 7 and 13 was relatively small (0.6935484 and 0.7071960	respectively). 
+```{r}
+# Run knn with k=13
+k <- 13
+predicted_target2 <- knn(train_norm_df, Bohemian_norm, train$target, k)
+predicted_target2
+```
+
+
+```{r}
+# Get the indices of the 13 nearest neighbors
+nearest_indices2 <- attr(predicted_target2, "nn.index")[1, ]
+
+# Create a data frame with the song titles, artists, and outcome classes of the 13 nearest neighbors
+nearest2 <- train[nearest_indices2 ,c("song_title", "artist", "target")]
+nearest2 
+
+```
+The 13 nearest neighbors to the "Bohemian Rhapsody" song are:
+
+- "Wait for the Man" by FIDLAR with a target outcome of 1 (George would like it) 
+- "Zac Brown Band - Hot Country" by Various Artists with a target outcome of 0 (George would not like it)
+- "Holdin On" by Flume with a target outcome of 1 (George would like it)
+- "It #1" by Ty Segall with a target outcome of 1 (George would like it)
+- "Strychnine" by The Sonics with a target outcome of 1 (George would like it)
+- "Time-Out" by Terror Train with a target outcome of 1 (George would like it)
+- "Waiting" by Dash Berlin with a target outcome of 0 (George would not like it)
+- "Hear Me Out" by Risking It All with a target outcome of 0 (George would not like it)
+- "Girlfriend" by	Ty Segall	with a target outcome of 1 (George would like it)
+- "Gonna Die"	by Autre Ne Veut with a target outcome of	1	(George would like it)
+- "Max Can't Surf"	by FIDLAR with a target outcome of	1	(George would like it)
+- "Rose Horizon by"	Yellow Claw	with a target outcome of 0 (George would not like it)	
+- "I Keep Ticking On"	by The Harmaleighs with a target outcome of	0	(George would not like it)
+
+
+
+***- Naive Bayes***\
+\
+**Question 1**\
+```{r}
+library(carData)
+Chile <- carData::Chile
+```
+
+**Question 2**\
+a. The table shows that the variables "age", "education", "income", "statusquo", and "vote" have missing values in 1, 11, 98, 17, and 168 rows, respectively.
+
+```{r}
+summary(Chile)
+
+# Create a subset of the Chile dataset with selected variables
+chile_subset <- Chile[, c("region", "population", "sex", "age", "education", "income", "statusquo", "vote")]
+
+# Generate a table of missingness by column
+colSums(is.na(chile_subset))
+```
+i.
+```{r}
+# subset the dataset to include only complete cases for the "vote" variable
+Chile<- Chile[complete.cases(Chile$vote),]
+
+# check no missing values for the "vote" variable
+sum(is.na(Chile$vote))
+```
+  1. Imputing values for the response variable when preparing data for the modeling process can be problematic as it may introduce bias and lead to overfitting. Bias arises when imputed values do not accurately represent the true underlying relationship between independent variables and the response variable, which can distort the data representation and affect model performance. Overfitting occurs when the model learns to rely on artificially generated data points rather than the true underlying patterns in the data, resulting in poor to perceiving new, unseen data.
+
+ii. In the Chile dataset, the variables "age", "education", and "statusquo" have missingness percentages of less than 1%. Thus. in this case, the row containing missing value will be removed
+```{r}
+# calculate the percentage of missing values for each variable
+NApct <- colMeans(is.na(Chile)) * 100
+NApct
+```
+
+```{r}
+# Subset the dataset to include only complete cases for "age", "education", and "statusquo"
+Chile <- Chile[complete.cases(Chile$age, Chile$education, Chile$statusquo),]
+
+# Confirm that there are no missing values for "age", "education", and "statusquo"
+colSums(is.na(Chile))
+```
+
+iii. new variable called "chile_income" being created. Its includes the values of the "income" variable in the Chile dataset, with the missing values replaced by the text value "Unknown"
+```{r}
+# replace missing values in the "income" variable with a separate text value
+ChileIncome<- ifelse(is.na(Chile$income), "Unknown", Chile$income)
+
+# check no missing values in the ChileIncome
+sum(is.na(ChileIncome))
+```
+  1. In the Chile dataset, it's possible that the "NA" values in the "income" variable may represent individuals who choose not to disclose their income or financial information. This may be because of various reasons such as thoughts about financial privacy, distrust of authorities, or personal reasons. Therefore, the "NA" values in the "income" variable may actually be an interesting value as they could provide insights into the attitudes and behaviors related to financial disclosure among the study population.
+  
+**Question 3**\
+There are no variables currently stored as Character
+```{r}
+str(Chile)
+```
+**Question 4**\
+The process of binning numerical variables has been completed successfully for all variables except the "population" variable. This is because the "population" variable contains some duplicate values, which causes the quantile() function to return non-unique values for the breaks argument in the cut() function. Therefore, an alternative approach needs to be used to bin this variable to avoid this issue.
+```{r}
+Chile$age <- cut(Chile$age, breaks = quantile(Chile$age, probs = seq(0, 1, 0.25)), labels = c("Young", "Middle-aged", "Older", "Elderly"))
+
+Chile$income <- cut(Chile$income, breaks = quantile(Chile$income, probs = seq(0, 1, 0.25), na.rm = TRUE), labels = c("Low", "Medium", "High", "Very high"))
+
+Chile$statusquo <- cut(Chile$statusquo, breaks = quantile(Chile$statusquo, probs = seq(0, 1, 0.25)), labels = c("Conservative", "Moderate", "Liberal", "Very liberal"))
+
+# Bin the "population" variable into 4 equal frequency bins using non-quantile method
+Chile$population <- cut(Chile$population, breaks = 4, labels = c("Small", "Medium", "Large", "Very large"))
+
+```
+a. 
+```{r}
+# View the frequency distribution of the numerical variable bins using the table() function
+table(Chile$age)
+table(Chile$income)
+table(Chile$statusquo)
+table(Chile$population)
+```
+
+b. Equal width binning involves dividing the range of the variable into a fixed number of equally sized intervals or bins. On the other hand, Equal frequency binning involves dividing the variable into a fixed number of bins such that each bin contains an equal number of observations. 
+
+Equal frequency binning can be preferable for some scenarios such as when using Naive Bayes classifiers because it help to manage skewed data and outliers by distributing an equal number of data points across bins. This approach can lead to a more balanced representation of the data, improving the algorithm's performance and generalization, especially when the contains like extreme values. 
+
+**Question 5**\
+```{r}
+set.seed(121)
+# Create index for training and validation sets
+index <- createDataPartition(Chile$vote, p = 0.6, list = FALSE)
+ChileTrain <- Chile[index, ]
+ChileValid <- Chile[-index, ]
+```
+**Question 6**\
+Based on the barplots, it appears that the "income" and "sex" variable may not have a strong amount of predictive power in a naive Bayes model as the distribution of the vote across the regions is relatively similar. Therefore, we can drop the "income" and "sex" variable from our dataset.
+```{r}
+# Proportional barplot for region variable
+ggplot(ChileTrain, aes(x = region, fill = vote)) +
+  geom_bar(position = "fill")
+
+# Proportional barplot for sex variable
+ggplot(ChileTrain, aes(x = sex, fill = vote)) +
+  geom_bar(position = "fill")
+
+# Proportional barplot for age_bin variable
+ggplot(ChileTrain, aes(x = age, fill = vote)) +
+  geom_bar(position = "fill")
+
+# Proportional barplot for education variable
+ggplot(ChileTrain, aes(x = education, fill = vote)) +
+  geom_bar(position = "fill")
+
+# Proportional barplot for income_bin variable
+ggplot(ChileTrain, aes(x = income, fill = vote)) +
+  geom_bar(position = "fill")
+
+# Proportional barplot for statusquo_bin variable
+ggplot(ChileTrain, aes(x = statusquo, fill = vote)) +
+  geom_bar(position = "fill")
+
+# Proportional barplot for population_bin variable
+ggplot(ChileTrain, aes(x = population, fill = vote)) +
+  geom_bar(position = "fill")
+
+```
+
+
+```{r}
+# drop income variable
+ChileTrain <- ChileTrain[, !names(ChileTrain) %in% c("income","sex")]
+ChileValid <- ChileValid[, !names(ChileValid) %in% c("income","sex")]
+
+```
+**Question 7**\
+```{r}
+# Build NB model
+ChileNb<- naiveBayes(vote~., data = ChileTrain)
+print(ChileNb)
+```
+**Question 8**\
+After running the confuion matrix it appears that the model's accuracy on the training set was slightly better than on the validation set, with accuracy percentages of 0.661 and 0.638 respectively. Since the difference in accuracy between the two sets is not significant, it suggests that the model is not overfitting to the training data and has a good chance of performing well on new and unseen data. Nonetheless, there is still room for improvement in the model's predictive power.
+
+
+```{r}
+# Predict on training and validation set
+trainpred <- predict(ChileNb, ChileTrain, type = "class")
+validpred <- predict(ChileNb, ChileValid, type = "class")
+
+# Confusion matrix and accuracy for training set
+confusionMatrix(trainpred, ChileTrain$vote)$table
+acctrain <- confusionMatrix(trainpred, ChileTrain$vote)$overall[1]
+
+# Confusion matrix and accuracy for validation set
+confusionMatrix(validpred, ChileValid$vote)$table
+accvalid <- confusionMatrix(validpred, ChileValid$vote)$overall[1]
+
+
+acctrain
+accvalid
+```
+**Question 9**\
+The naive rule for classification is an approach where all records are classified based on the most frequent class in the training set. 
+
+If we used the naive rule as an approach to classification for our training set, we would classify all the records based on the most frequent class in the training set. Based on the training set's distribution, we would classify all records as "N" (will vote no against Pinochet) since it is the most frequent class in the training set.
+
+a. We can calculate the percentage of the most frequent variable in our training and validation datasets by using the below code. The resulting accuracy of the naive rule on both the training and validation sets is 0.353 or 35.3%. 
+
+When we compare this result with the accuracy of our Naive Bayes model (on question 8), it is evident that the model outperforms the naive rule by a significant margin, with an accuracy improvement of around 31% on the training set and 28.5% on the validation set
+```{r}
+# Create a vector of "N" predictions for the training set
+naive_preds <- rep("N", nrow(ChileTrain))
+
+# Calculate the accuracy of the naive rule
+naive_accuracy <- sum(naive_preds == ChileTrain$vote) / nrow(ChileTrain)
+
+naive_accuracy
+```
+
+**Question 10**\
+```{r}
+# predict the validation set to be most likely vote yes
+pred.probs <- predict(ChileNb, newdata = ChileValid, type = "raw")
+df_probs <- data.frame(vote = ChileValid$vote, predyes = pred.probs[, "Y"])
+
+# subset 100 records
+subset <- df_probs %>% top_n(100, predyes) %>% slice(1:100)
+
+print(subset)
+```
+a.
+There were 84 people who actually voted "YES" among the 100 records predicted to be most likely to vote "YES" by the model. The accuracy for these predictions is 84%, which is higher than the overall accuracy of the model on the validation set (63.77%). This suggests that the model performs better at predicting the outcome for those who are most likely to vote "YES" than for the general population.
+```{r}
+
+# Count the actual number of people who voted "YES"
+num_actual_yes <- subset %>% filter(vote == "Y") %>% nrow()
+num_actual_yes
+# Calculate the accuracy
+accuracy <- num_actual_yes / nrow(subset)
+accuracy
+
+```
+b. Identifying a subset of individuals who are most likely to vote "YES" can be valuable information for a political party. For example, the party could use this information to focus their resources on these individuals in order to encourage them to persuade another individual that have not been vote and lead them to vote "YES". The party could tailor their messaging to these individuals based on their characteristics and the factors that are most strongly associated with a "YES" vote. By focusing their efforts on those who are most likely to vote "YES", the party could potentially increase their chances of success in the election.
+
+**Question 11** 
+
+a. For this question, the record chosen was from row number 8 in the 'ChileTrain' dataset. The individual is from the northern city of Santiago and is classified as a conservative. According to their voting intention, they will vote against Pinochet in the referendum.
+```{r}
+row_8 <- ChileTrain[7,]
+row_8
+```  
+
+b. The model predicted that the person from row 8 in the training set voted "N" (against Pinochet)
+```{r}
+row8 <- predict(ChileNb, ChileTrain[7,], type="class")
+row8
+```
+
+c. The value 0.01107169 is the predicted probability that the person from row 8 in the training set would vote "Yes" (will vote Pinochet) according to the Naive Bayes model. 
+```{r}
+pred <- predict(ChileNb, row_8, type = "raw")
+prob_Y <- pred[1, "Y"]
+prob_Y
+```
+d. To calculate the probability of row 8 voting "yes" using the A-priori probabilities and Conditional probabilities from the ChileNB model (result in Question 7), we need to compute the probability of row 8 voting "yes" given the conditional probabilities for all the predictors in row 8. This will be the numerator. We also need to calculate the probability of row 8 voting "no", "abstain", and "undecided" given the same set of conditional probabilities for each of these outcomes. These probabilities will form the denominators. Finally, we can calculate the probability of row 8 voting "yes" by dividing the numerator by the sum of the denominators and the numerator.
+```{r}
+numerator <- 0.34329349*0.15473888*0.04642166*0.1975806*0.36557060*0.015473888
+denom1 <- 0.07370518*0.16216216*0.11711712*0.3761468*0.54954955*0.162162162
+denom2 <- 0.35325365*0.12781955*0.05827068*0.2826087*0.42669173*0.605263158
+denom3 <- 0.22974768*0.09826590*0.04624277*0.1495601*0.41040462*0.112716763
+
+numerator/(numerator+denom1+denom2+denom3)
+```
